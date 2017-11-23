@@ -29,6 +29,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.UUID;
 
+import com.wasteofplastic.askyblock.util.Modifier;
 import net.milkbowl.vault.economy.EconomyResponse;
 
 import org.apache.commons.lang.StringUtils;
@@ -930,6 +931,46 @@ public class Challenges implements CommandExecutor, TabCompleter {
         }
     }
 
+    private String getReqListFromChallengeRequiredItems(final String challenge) {
+        String reqList = getChallengeConfig().getString("challenges.challengeList." + challenge + ".requiredItems");
+        if (!reqList.contains(";")) {
+            return reqList;
+        }
+
+        String[] reqListParts = reqList.split(";");
+
+        return reqListParts[0];
+    }
+
+    private Modifier getModifierFromChallengeRequiredItems(final String challenge) {
+        // The format of the requiredItems is as follows:
+        // Material:Qty
+        // or
+        // Material:DamageModifier:Qty
+        // This second one is so that items such as potions or variations on
+        // standard items can be collected
+
+        String reqList = getReqListFromChallengeRequiredItems(challenge);
+
+        int requiredItemsModifierAmount = 0;
+        String requiredItemsOperator = null;
+        if (reqList.contains(";")) {
+            String[] temp = reqList.split(";");
+            if (temp.length != 2) {
+                throw new RuntimeException("Invalid format");
+            }
+            requiredItemsOperator = temp[1].substring(0, 1);
+            requiredItemsModifierAmount = Integer.valueOf(requiredItemsOperator.substring(1));
+
+            Modifier modifier = new Modifier(requiredItemsModifierAmount, temp[1].substring(0, 1).charAt(0));
+            if (!modifier.isValid()) {
+                throw new RuntimeException("Invalid operator: " + modifier.getOperator());
+            }
+        }
+
+        return null;
+    }
+
     /**
      * Checks if a player has enough for a challenge. Supports two types of
      * checks, inventory and island. Removes items if required.
@@ -962,13 +1003,18 @@ public class Challenges implements CommandExecutor, TabCompleter {
                 }
             }
         }
-        final String reqList = getChallengeConfig().getString("challenges.challengeList." + challenge + ".requiredItems");
+
+        final String reqList = getReqListFromChallengeRequiredItems(challenge);
+
+        Modifier requiredItemsModifier = getModifierFromChallengeRequiredItems(challenge);
+
         // The format of the requiredItems is as follows:
         // Material:Qty
         // or
         // Material:DamageModifier:Qty
         // This second one is so that items such as potions or variations on
         // standard items can be collected
+
         if (type.equalsIgnoreCase("inventory")) {
             List<ItemStack> toBeRemoved = new ArrayList<ItemStack>();
             Material reqItem;
@@ -1016,9 +1062,10 @@ public class Challenges implements CommandExecutor, TabCompleter {
                                 // enough required items
                                 for (Entry<Integer, ? extends ItemStack> en : player.getInventory().all(reqItem).entrySet()) {
                                     // Get the item
-                                    ItemStack i = en.getValue();
+                                    ItemStack inventoryItem = en.getValue();
+
                                     // If the item is enchanted, skip - it doesn't count
-                                    if (!i.getEnchantments().isEmpty()) {
+                                    if (!inventoryItem.getEnchantments().isEmpty()) {
                                         if (DEBUG)
                                             plugin.getLogger().info("DEBUG: item has enchantment - doesn't count");
                                         continue;
@@ -1028,7 +1075,7 @@ public class Challenges implements CommandExecutor, TabCompleter {
                                     // made by the player
                                     // TODO: if there are any other items that act
                                     // in the same way, they need adding too...
-                                    if (i.getDurability() == 0 || (reqItem == Material.MAP && i.getType() == Material.MAP)) {
+                                    if (inventoryItem.getDurability() == 0 || (reqItem == Material.MAP && inventoryItem.getType() == Material.MAP)) {
                                         // Clear any naming, or lore etc.
                                         //i.setItemMeta(null);
                                         //player.getInventory().setItem(en.getKey(), i);
@@ -1041,30 +1088,30 @@ public class Challenges implements CommandExecutor, TabCompleter {
                                         // take
                                         // portion of i
                                         // amount += i.getAmount();
-                                        if ((amount + i.getAmount()) < reqAmount) {
+                                        if ((amount + inventoryItem.getAmount()) < reqAmount) {
                                             // Remove all of this item stack - clone
                                             // otherwise it will keep a reference to
                                             // the
                                             // original
-                                            toBeRemoved.add(i.clone());
-                                            amount += i.getAmount();
+                                            toBeRemoved.add(inventoryItem.clone());
+                                            amount += inventoryItem.getAmount();
                                             if (DEBUG)
-                                                plugin.getLogger().info("DEBUG: amount is <= req Remove "+ i.toString() + ":" + i.getDurability() + " x " + i.getAmount());
-                                        } else if ((amount + i.getAmount()) == reqAmount) {
+                                                plugin.getLogger().info("DEBUG: amount is <= req Remove "+ inventoryItem.toString() + ":" + inventoryItem.getDurability() + " x " + inventoryItem.getAmount());
+                                        } else if ((amount + inventoryItem.getAmount()) == reqAmount) {
                                             if (DEBUG)
-                                                plugin.getLogger().info("DEBUG: amount is = req Remove " + i.toString() + ":" + i.getDurability() + " x " + i.getAmount());
-                                            toBeRemoved.add(i.clone());
-                                            amount += i.getAmount();
+                                                plugin.getLogger().info("DEBUG: amount is = req Remove " + inventoryItem.toString() + ":" + inventoryItem.getDurability() + " x " + inventoryItem.getAmount());
+                                            toBeRemoved.add(inventoryItem.clone());
+                                            amount += inventoryItem.getAmount();
                                             break;
                                         } else {
                                             // Remove a portion of this item
                                             if (DEBUG)
-                                                plugin.getLogger().info("DEBUG: amount is > req Remove " + i.toString() + ":" + i.getDurability() + " x " + i.getAmount());
+                                                plugin.getLogger().info("DEBUG: amount is > req Remove " + inventoryItem.toString() + ":" + inventoryItem.getDurability() + " x " + inventoryItem.getAmount());
 
                                             item.setAmount(reqAmount - amount);
-                                            item.setDurability(i.getDurability());
+                                            item.setDurability(inventoryItem.getDurability());
                                             toBeRemoved.add(item);
-                                            amount += i.getAmount();
+                                            amount += inventoryItem.getAmount();
                                             break;
                                         }
                                     }
